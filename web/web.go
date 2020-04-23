@@ -550,9 +550,17 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	hhFunc := h.testReadyHandler(hh)
 
+	// Operation name is the full URL path for api calls, first segment for everything else.
+	rg := regexp.MustCompile( h.options.RoutePrefix + `([^/]+).*`)
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
-		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		m := rg.FindStringSubmatch(r.URL.Path)
+		if 2 != len(m) || m[1] == "api" {
+			return "/" + strings.TrimPrefix(r.URL.Path, h.options.RoutePrefix)
+		}
+
+		return "/" + m[1]
 	})
+
 	mux := http.NewServeMux()
 	mux.Handle("/", h.router)
 
@@ -561,6 +569,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		apiPath = h.options.RoutePrefix + apiPath
 		level.Info(h.logger).Log("msg", "Router prefix", "prefix", h.options.RoutePrefix)
 	}
+
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
 		WithInstrumentation(setPathWithPrefix(apiPath + "/v1"))
