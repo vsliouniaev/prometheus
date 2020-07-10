@@ -72,7 +72,8 @@ func TestRuleEval(t *testing.T) {
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+		result, warn, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+		testutil.Equals(t, 0, len(warn))
 		testutil.Ok(t, err)
 		testutil.Equals(t, test.result, result)
 	}
@@ -113,7 +114,8 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	_, warn, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	testutil.Equals(t, 0, len(warn))
 	testutil.NotOk(t, err)
 	e := fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
 	testutil.ErrorEqual(t, e, err)

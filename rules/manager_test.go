@@ -151,7 +151,8 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, warn, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		testutil.Equals(t, 0, len(warn))
 		testutil.Ok(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -300,7 +301,8 @@ func TestForStateAddSamples(t *testing.T) {
 			forState = float64(value.StaleNaN)
 		}
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, warn, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		testutil.Equals(t, 0, len(warn))
 		testutil.Ok(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS' samples.

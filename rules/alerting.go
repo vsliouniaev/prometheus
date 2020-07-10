@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -296,12 +297,12 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
-	res, err := query(ctx, r.vector.String(), ts)
+func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, storage.Warnings, error) {
+	res, warn, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
 		r.SetHealth(HealthBad)
 		r.SetLastError(err)
-		return nil, err
+		return nil, warn, err
 	}
 
 	r.mtx.Lock()
@@ -369,7 +370,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			// SetLastError will deadlock.
 			r.health = HealthBad
 			r.lastError = err
-			return nil, err
+			return nil, warn, err
 		}
 
 		alerts[h] = &Alert{
@@ -423,7 +424,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	// SetLastError will deadlock.
 	r.health = HealthGood
 	r.lastError = err
-	return vec, nil
+	return vec, warn, nil
 }
 
 // State returns the maximum state of alert instances for this rule.
