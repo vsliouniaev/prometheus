@@ -59,6 +59,7 @@ type Metrics struct {
 	iterationsScheduled prometheus.Counter
 	evalTotal           *prometheus.CounterVec
 	evalFailures        *prometheus.CounterVec
+	evalWarnings        *prometheus.CounterVec
 	groupInterval       *prometheus.GaugeVec
 	groupLastEvalTime   *prometheus.GaugeVec
 	groupLastDuration   *prometheus.GaugeVec
@@ -108,6 +109,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
+		evalWarnings: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_evaluation_warnings_total",
+				Help:      "The total number of rule evaluation warnings.",
+			},
+			[]string{"rule_group"},
+		),
 		groupInterval: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -150,6 +159,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.iterationsScheduled,
 			m.evalTotal,
 			m.evalFailures,
+			m.evalWarnings,
 			m.groupInterval,
 			m.groupLastEvalTime,
 			m.groupLastDuration,
@@ -161,31 +171,31 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 }
 
 // QueryFunc processes PromQL queries.
-type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
+type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, storage.Warnings, error)
 
 // EngineQueryFunc returns a new query function that executes instant queries against
 // the given engine.
 // It converts scalar into vector results.
 func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
-	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, storage.Warnings, error) {
 		q, err := engine.NewInstantQuery(q, qs, t)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		res := q.Exec(ctx)
 		if res.Err != nil {
-			return nil, res.Err
+			return nil, res.Warnings, res.Err
 		}
 		switch v := res.Value.(type) {
 		case promql.Vector:
-			return v, nil
+			return v, res.Warnings, nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
 				Point:  promql.Point(v),
 				Metric: labels.Labels{},
-			}}, nil
+			}}, res.Warnings, nil
 		default:
-			return nil, errors.New("rule result is not a vector or scalar")
+			return nil, res.Warnings, errors.New("rule result is not a vector or scalar")
 		}
 	}
 }
@@ -197,7 +207,7 @@ type Rule interface {
 	// Labels of the rule.
 	Labels() labels.Labels
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
+	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, storage.Warnings, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// SetLastErr sets the current error experienced by the rule.
@@ -265,6 +275,7 @@ func NewGroup(o GroupOptions) *Group {
 	key := groupKey(o.File, o.Name)
 	metrics.evalTotal.WithLabelValues(key)
 	metrics.evalFailures.WithLabelValues(key)
+	metrics.evalWarnings.WithLabelValues(key)
 	metrics.groupLastEvalTime.WithLabelValues(key)
 	metrics.groupLastDuration.WithLabelValues(key)
 	metrics.groupRules.WithLabelValues(key).Set(float64(len(o.Rules)))
@@ -569,7 +580,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.evalTotal.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
+			vector, warn, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
+			if warn != nil {
+				level.Warn(g.logger).Log("msg", "Evaluating rule had warnings", "rule", rule, "warn", warn)
+				// We only care that the rule execution had warnings, not how many there were.
+				g.metrics.evalWarnings.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
+			}
+
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -954,6 +971,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 			if m := g.metrics; m != nil {
 				m.evalTotal.DeleteLabelValues(n)
 				m.evalFailures.DeleteLabelValues(n)
+				m.evalWarnings.DeleteLabelValues(n)
 				m.groupInterval.DeleteLabelValues(n)
 				m.groupLastEvalTime.DeleteLabelValues(n)
 				m.groupLastDuration.DeleteLabelValues(n)

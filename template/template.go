@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/storage"
 	"math"
 	"net/url"
 	"regexp"
@@ -76,12 +77,12 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 }
 
 // QueryFunc executes a PromQL query at the given time.
-type QueryFunc func(context.Context, string, time.Time) (promql.Vector, error)
+type QueryFunc func(context.Context, string, time.Time) (promql.Vector, storage.Warnings, error)
 
-func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (queryResult, error) {
-	vector, err := queryFn(ctx, q, ts)
+func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (queryResult, storage.Warnings, error) {
+	vector, warn, err := queryFn(ctx, q, ts)
 	if err != nil {
-		return nil, err
+		return nil, warn, err
 	}
 
 	// promql.Vector is hard to work with in templates, so convert to
@@ -95,7 +96,7 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 		}
 		result[n] = &s
 	}
-	return result, nil
+	return result, warn, nil
 }
 
 // Expander executes templates in text or HTML mode with a common set of Prometheus template functions.
@@ -122,7 +123,8 @@ func NewTemplateExpander(
 		data: data,
 		funcMap: text_template.FuncMap{
 			"query": func(q string) (queryResult, error) {
-				return query(ctx, q, timestamp.Time(), queryFunc)
+				res, _, err := query(ctx, q, timestamp.Time(), queryFunc)
+				return res, err
 			},
 			"first": func(v queryResult) (*sample, error) {
 				if len(v) > 0 {

@@ -169,7 +169,8 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		t.Logf("case %d", i)
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].Point.T = timestamp.FromTime(evalTime)
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, warn, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		testutil.Equals(t, 0, len(warn))
 		testutil.Ok(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -248,9 +249,10 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	result[1].Point.T = timestamp.FromTime(evalTime)
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
-	res, err := ruleWithoutExternalLabels.Eval(
+	res, warn, err := ruleWithoutExternalLabels.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
+	testutil.Equals(t, 0, len(warn))
 	testutil.Ok(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
@@ -262,9 +264,10 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		}
 	}
 
-	res, err = ruleWithExternalLabels.Eval(
+	res, warn, err = ruleWithExternalLabels.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
+	testutil.Equals(t, 0, len(warn))
 	testutil.Ok(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
@@ -318,9 +321,10 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	result[0].Point.T = timestamp.FromTime(evalTime)
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
-	res, err := rule.Eval(
+	res, warn, err := rule.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
+	testutil.Equals(t, 0, len(warn))
 	testutil.Ok(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
@@ -361,7 +365,8 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		nil,
 		true, log.NewNopLogger(),
 	)
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	_, warn, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	testutil.Equals(t, 0, len(warn))
 	testutil.NotOk(t, err)
 	e := fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
 	testutil.ErrorEqual(t, e, err)

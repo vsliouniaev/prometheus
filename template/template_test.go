@@ -15,6 +15,7 @@ package template
 
 import (
 	"context"
+	"github.com/prometheus/prometheus/storage"
 	"math"
 	"net/url"
 	"testing"
@@ -271,8 +272,8 @@ func TestTemplateExpansion(t *testing.T) {
 	}
 
 	for _, s := range scenarios {
-		queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
-			return s.queryResult, nil
+		queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, storage.Warnings, error) {
+			return s.queryResult, nil, nil
 		}
 		var result string
 		var err error

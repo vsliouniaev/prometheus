@@ -16,6 +16,7 @@ package rules
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/storage"
 	"html/template"
 	"net/url"
 	"sync"
@@ -73,12 +74,12 @@ func (rule *RecordingRule) Labels() labels.Labels {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
-	vector, err := query(ctx, rule.vector.String(), ts)
+func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, storage.Warnings, error) {
+	vector, warn, err := query(ctx, rule.vector.String(), ts)
 	if err != nil {
 		rule.SetHealth(HealthBad)
 		rule.SetLastError(err)
-		return nil, err
+		return nil, warn, err
 	}
 	// Override the metric name and labels.
 	for i := range vector {
@@ -101,12 +102,12 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 		err = fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
 		rule.SetHealth(HealthBad)
 		rule.SetLastError(err)
-		return nil, err
+		return nil, warn, err
 	}
 
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
-	return vector, nil
+	return vector, warn, nil
 }
 
 func (rule *RecordingRule) String() string {
